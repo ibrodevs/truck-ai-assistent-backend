@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
-from .models import UserProfile, DriverAvailability
+from .models import UserProfile, DriverAvailability, DriverRating
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -25,6 +25,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 class DriverProfileSerializer(serializers.ModelSerializer):
     """Сериализатор для отображения профилей водителей при подборе"""
+    id = serializers.IntegerField(read_only=True)
     username = serializers.CharField(source='user.username', read_only=True)
     first_name = serializers.CharField(source='user.first_name', read_only=True)
     last_name = serializers.CharField(source='user.last_name', read_only=True)
@@ -32,7 +33,7 @@ class DriverProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = [
-            'username', 'first_name', 'last_name', 'phone', 'company',
+            'id', 'username', 'first_name', 'last_name', 'phone', 'company',
             'bio', 'experience_years', 'driver_license', 'license_categories',
             'skills', 'preferred_routes', 'available'
         ]
@@ -123,3 +124,46 @@ class DriverAvailabilitySerializer(serializers.ModelSerializer):
             if data['end_date'] < data['start_date']:
                 raise serializers.ValidationError("Дата окончания не может быть раньше даты начала")
         return data
+
+
+class DriverRatingSerializer(serializers.ModelSerializer):
+    """Сериализатор для рейтингов водителей"""
+    driver_username = serializers.CharField(source='driver.user.username', read_only=True)
+    driver_full_name = serializers.SerializerMethodField()
+    rated_by_username = serializers.CharField(source='rated_by.user.username', read_only=True)
+    
+    class Meta:
+        model = DriverRating
+        fields = [
+            'id', 'driver', 'driver_username', 'driver_full_name',
+            'rated_by', 'rated_by_username', 'rating', 'comment',
+            'punctuality', 'professionalism', 'communication',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'rated_by', 'created_at', 'updated_at']
+    
+    def get_driver_full_name(self, obj):
+        return f"{obj.driver.user.first_name} {obj.driver.user.last_name}".strip()
+    
+    def validate_rating(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("Рейтинг должен быть от 1 до 5")
+        return value
+    
+    def validate(self, data):
+        """Проверяем, что водитель не может оценить сам себя"""
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            driver = data.get('driver')
+            if driver and driver.user == request.user:
+                raise serializers.ValidationError("Вы не можете оценить сам себя")
+        return data
+
+
+class DriverAverageRatingSerializer(serializers.Serializer):
+    """Сериализатор для средних рейтингов водителя"""
+    average_rating = serializers.FloatField()
+    total_ratings = serializers.IntegerField()
+    punctuality = serializers.FloatField()
+    professionalism = serializers.FloatField()
+    communication = serializers.FloatField()

@@ -9,8 +9,8 @@ from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.utils.decorators import method_decorator
 from datetime import datetime
 
-from .models import UserProfile, DriverAvailability
-from .serializers import UserProfileSerializer, RegisterSerializer, LoginSerializer, DriverAvailabilitySerializer
+from .models import UserProfile, DriverAvailability, DriverRating
+from .serializers import UserProfileSerializer, RegisterSerializer, LoginSerializer, DriverAvailabilitySerializer, DriverRatingSerializer, DriverAverageRatingSerializer, DriverProfileSerializer
 
 
 @api_view(['GET'])
@@ -203,3 +203,169 @@ def availability_delete_view(request, pk):
         {'message': 'Запись успешно удалена'},
         status=status.HTTP_204_NO_CONTENT
     )
+
+
+# === РЕЙТИНГИ ВОДИТЕЛЕЙ ===
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def driver_ratings_list_view(request, driver_id=None):
+    """Получить список рейтингов водителя"""
+    if driver_id:
+        try:
+            driver = UserProfile.objects.get(id=driver_id, role='trucker')
+        except UserProfile.DoesNotExist:
+            return Response(
+                {'error': 'Водитель не найден'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        ratings = DriverRating.objects.filter(driver=driver)
+    else:
+        # Если ID не указан, показываем все рейтинги (для админов)
+        if request.user.profile.role != 'admin':
+            return Response(
+                {'error': 'Недостаточно прав'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        ratings = DriverRating.objects.all()
+    
+    serializer = DriverRatingSerializer(ratings, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def driver_average_rating_view(request, driver_id):
+    """Получить средний рейтинг водителя"""
+    try:
+        driver = UserProfile.objects.get(id=driver_id, role='trucker')
+    except UserProfile.DoesNotExist:
+        return Response(
+            {'error': 'Водитель не найден'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    avg_rating = DriverRating.get_driver_average_rating(driver)
+    if avg_rating is None:
+        return Response({
+            'average_rating': 0,
+            'total_ratings': 0,
+            'punctuality': 0,
+            'professionalism': 0,
+            'communication': 0,
+        })
+    
+    serializer = DriverAverageRatingSerializer(avg_rating)
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def driver_rating_create_view(request):
+    """Создать рейтинг для водителя"""
+    serializer = DriverRatingSerializer(data=request.data, context={'request': request})
+    
+    if serializer.is_valid():
+        # Проверяем, что пользователь не оценивал этого водителя ранее
+        driver_id = request.data.get('driver')
+        existing_rating = DriverRating.objects.filter(
+            driver_id=driver_id,
+            rated_by=request.user.profile
+        ).first()
+        
+        if existing_rating:
+            return Response(
+                {'error': 'Вы уже оценили этого водителя. Вы можете обновить существующий рейтинг.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer.save(rated_by=request.user.profile)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def driver_rating_update_view(request, pk):
+    """Обновить существующий рейтинг"""
+    try:
+        rating = DriverRating.objects.get(pk=pk, rated_by=request.user.profile)
+    except DriverRating.DoesNotExist:
+        return Response(
+            {'error': 'Рейтинг не найден'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    serializer = DriverRatingSerializer(
+        rating, 
+        data=request.data, 
+        partial=True,
+        context={'request': request}
+    )
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['DELETE'])
+@permission_classes([permissions.IsAuthenticated])
+def driver_rating_delete_view(request, pk):
+    """Удалить рейтинг"""
+    profile = request.user.profile
+    
+    try:
+        # Пользователи могут удалять только свои рейтинги, админы - любые
+        if profile.role == 'admin':
+            rating = DriverRating.objects.get(pk=pk)
+        else:
+            rating = DriverRating.objects.get(pk=pk, rated_by=profile)
+    except DriverRating.DoesNotExist:
+        return Response(
+            {'error': 'Рейтинг не найден'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    rating.delete()
+    return Response(
+        {'message': 'Рейтинг удален'},
+        status=status.HTTP_204_NO_CONTENT
+    )
+
+
+# === СПИСОК ВОДИТЕЛЕЙ ===
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def drivers_list_view(request):
+    """Получить список всех водителей (для диспетчеров и админов)"""
+    profile = request.user.profile
+    
+    # Только диспетчеры и админы могут просматривать список водителей
+    if profile.role not in ['dispatcher', 'admin']:
+        return Response(
+            {'error': 'Недостаточно прав'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    drivers = UserProfile.objects.filter(role='trucker')
+    serializer = DriverProfileSerializer(drivers, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def driver_detail_view(request, driver_id):
+    """Получить детальную информацию о водителе"""
+    try:
+        driver = UserProfile.objects.get(id=driver_id, role='trucker')
+    except UserProfile.DoesNotExist:
+        return Response(
+            {'error': 'Водитель не найден'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    serializer = DriverProfileSerializer(driver)
+    return Response(serializer.data)

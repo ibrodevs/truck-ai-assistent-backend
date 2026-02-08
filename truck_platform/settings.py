@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'ai_assistants',
     'accounts',
+    'notifications',
 ]
 
 MIDDLEWARE = [
