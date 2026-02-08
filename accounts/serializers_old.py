@@ -102,24 +102,3 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError("Необходимо указать имя пользователя и пароль")
         
         return data
-
-
-class DriverAvailabilitySerializer(serializers.ModelSerializer):
-    """Сериализатор для календаря доступности водителя"""
-    driver_username = serializers.CharField(source='driver.user.username', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    
-    class Meta:
-        model = DriverAvailability
-        fields = [
-            'id', 'driver', 'driver_username', 'start_date', 'end_date', 
-            'status', 'status_display', 'notes', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['id', 'driver', 'created_at', 'updated_at']
-    
-    def validate(self, data):
-        """Проверяем, что дата окончания не раньше даты начала"""
-        if data.get('end_date') and data.get('start_date'):
-            if data['end_date'] < data['start_date']:
-                raise serializers.ValidationError("Дата окончания не может быть раньше даты начала")
-        return data

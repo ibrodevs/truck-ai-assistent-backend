@@ -46,6 +46,14 @@ def send_message(request):
     assistant_type = serializer.validated_data['assistant_type']
     conversation_id = serializer.validated_data.get('conversation_id')
     
+    # Проверка доступа к ассистенту по роли пользователя
+    user_role = request.user.profile.role if hasattr(request.user, 'profile') else 'trucker'
+    if assistant_type == 'driver_matching' and user_role == 'trucker':
+        return Response(
+            {'error': 'У вас нет доступа к этому ассистенту. Подбор водителей доступен только диспетчерам.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
     # Получаем или создаем диалог
     if conversation_id:
         conversation = get_object_or_404(
@@ -104,6 +112,14 @@ def send_message(request):
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def driver_matching(request):
+    # Проверка прав доступа - только диспетчеры и администраторы
+    user_role = request.user.profile.role if hasattr(request.user, 'profile') else 'trucker'
+    if user_role == 'trucker':
+        return Response(
+            {'error': 'Доступ запрещен. Функция подбора водителей доступна только диспетчерам.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
     serializer = DriverMatchingRequestSerializer(data=request.data)
     
     if not serializer.is_valid():
@@ -113,12 +129,96 @@ def driver_matching(request):
     driver_requirements = serializer.validated_data['driver_requirements']
     dates = serializer.validated_data['dates']
     
-    # Генерируем ответ ИИ
+    # Получаем всех доступных водителей из базы данных
+    from accounts.models import UserProfile, DriverAvailability
+    from accounts.serializers import DriverProfileSerializer, DriverAvailabilitySerializer
+    from datetime import datetime, date
+    
+    # Парсим даты из запроса (если указаны)
+    start_date = None
+    end_date = None
+    if dates:
+        try:
+            # Попробуем извлечь даты из строки
+            import re
+            date_pattern = r'\d{4}-\d{2}-\d{2}'
+            found_dates = re.findall(date_pattern, dates)
+            if len(found_dates) >= 2:
+                start_date = datetime.strptime(found_dates[0], '%Y-%m-%d').date()
+                end_date = datetime.strptime(found_dates[1], '%Y-%m-%d').date()
+            elif len(found_dates) == 1:
+                start_date = datetime.strptime(found_dates[0], '%Y-%m-%d').date()
+        except:
+            pass
+    
+    # Получаем всех водителей с базовой доступностью
+    available_drivers = UserProfile.objects.filter(
+        role='trucker',
+        available=True
+    ).select_related('user')
+    
+    # Сериализуем данные водителей
+    drivers_data = []
+    for driver in available_drivers:
+        driver_info = DriverProfileSerializer(driver).data
+        
+        # Получаем записи календаря водителя
+        availability_entries = DriverAvailability.objects.filter(driver=driver)
+        
+        # Проверяем доступность на указанные даты
+        if start_date and end_date:
+            # Находим все записи, пересекающиеся с запрашиваемым периодом
+            relevant_entries = availability_entries.filter(
+                start_date__lte=end_date,
+                end_date__gte=start_date
+            )
+            
+            # Собираем информацию о доступности
+            calendar_info = []
+            is_available_for_period = True
+            
+            for entry in relevant_entries:
+                calendar_info.append({
+                    'start_date': entry.start_date.isoformat(),
+                    'end_date': entry.end_date.isoformat(),
+                    'status': entry.status,
+                    'notes': entry.notes
+                })
+                
+                # Если есть хотя бы одна запись "занят" в этом периоде
+                if entry.status == 'busy':
+                    is_available_for_period = False
+            
+            driver_info['calendar_status'] = 'available' if is_available_for_period else 'busy'
+            driver_info['calendar_entries'] = calendar_info
+        else:
+            # Если даты не указаны, показываем ближайшие записи
+            upcoming_entries = availability_entries.filter(
+                start_date__gte=date.today()
+            ).order_by('start_date')[:5]
+            
+            driver_info['calendar_entries'] = [
+                {
+                    'start_date': entry.start_date.isoformat(),
+                    'end_date': entry.end_date.isoformat(),
+                    'status': entry.status,
+                    'notes': entry.notes
+                }
+                for entry in upcoming_entries
+            ]
+            driver_info['calendar_status'] = 'unknown'
+        
+        drivers_data.append(driver_info)
+    
+    print(f"Найдено водителей для подбора: {len(drivers_data)}")
+    
+    # Генерируем ответ ИИ с учетом реальных водителей и их календарей
     gemini_service = GeminiService()
     ai_response = gemini_service.generate_driver_matching_response(
         route_type=route_type,
         driver_requirements=driver_requirements,
-        dates=dates
+        dates=dates,
+        drivers_data=drivers_data  # Передаем данные водителей с календарями
     )
     
     # Сохраняем запрос
@@ -137,6 +237,14 @@ def driver_matching(request):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def driver_matching_history(request):
+    # Проверка прав доступа - только диспетчеры и администраторы
+    user_role = request.user.profile.role if hasattr(request.user, 'profile') else 'trucker'
+    if user_role == 'trucker':
+        return Response(
+            {'error': 'Доступ запрещен. Функция подбора водителей доступна только диспетчерам.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
     requests = DriverMatchingRequest.objects.filter(user=request.user).order_by('-created_at')
     serializer = DriverMatchingSerializer(requests, many=True)
     return Response(serializer.data)
