@@ -33,12 +33,9 @@ ALLOWED_HOSTS = [
     '127.0.0.1', 
     '0.0.0.0',
     '.onrender.com',  # Для Render
+    config('ALLOWED_HOST', default=''),  # Для кастомного домена
+    "https://truck-ai-assistent-frontend.vercel.app"
 ]
-
-# Добавляем кастомный хост если он установлен
-ALLOWED_HOST = config('ALLOWED_HOST', default='')
-if ALLOWED_HOST:
-    ALLOWED_HOSTS.append(ALLOWED_HOST)
 
 
 # Application definition
@@ -167,6 +164,7 @@ ALLOWED_HOST = config('ALLOWED_HOST', default='')
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://truck-ai-assistent-frontend.vercel.app"
 ]
 
 # Добавляем фронтенд URL если он установлен
@@ -179,6 +177,7 @@ CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://truck-ai-assistent-frontend.vercel.app"
 ]
 
 # Добавляем URLs если они установлены
