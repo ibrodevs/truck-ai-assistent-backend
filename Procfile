@@ -1,0 +1,1 @@
+web: gunicorn truck_platform.wsgi:application

@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: truck-ai-backend
+    env: python
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn truck_platform.wsgi:application"
+    plan: free
+    healthCheckPath: /admin/
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: truck-ai-db
+          property: connectionString
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CORS_ALLOW_ALL_ORIGINS
+        value: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: ALLOWED_HOST
+        sync: false
+      - key: DJANGO_SUPERUSER_USERNAME
+        value: admin
+      - key: DJANGO_SUPERUSER_EMAIL
+        value: admin@truckai.com
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+
+databases:
+  - name: truck-ai-db
+    plan: free
