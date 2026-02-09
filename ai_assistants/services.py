@@ -186,7 +186,7 @@ class GeminiService:
    • Доступен: {'Да' if driver.get('available', True) else 'Нет'}{calendar_info}
 """
             
-            if not self.model:
+            if not self.client:
                 return f"""📋 АНАЛИЗ ПОДБОРА ВОДИТЕЛЕЙ
 
 Тип маршрута: {route_type}
@@ -235,7 +235,7 @@ class GeminiService:
             
         else:
             # Если водителей нет в БД - возвращаем общие рекомендации
-            if not self.model:
+            if not self.client:
                 return f"""📋 АНАЛИЗ ТРЕБОВАНИЙ К ВОДИТЕЛЮ
 
 Тип маршрута: {route_type}
