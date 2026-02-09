@@ -17,7 +17,7 @@ def test_gemini_api():
     
     service = GeminiService()
     
-    if not service.model:
+    if not service.client:
         print("❌ Gemini API не инициализирован. Проверьте API ключ.")
         return
     

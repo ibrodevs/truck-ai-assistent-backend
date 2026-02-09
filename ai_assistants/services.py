@@ -1,11 +1,7 @@
-import google.generativeai as genai
+import google.genai as genai
 from django.conf import settings
 from .models import AIAssistantType
 import logging
-import warnings
-
-# Игнорируем предупреждения о deprecated API
-warnings.filterwarnings("ignore", message="All support for the `google.generativeai` package has ended")
 
 logger = logging.getLogger(__name__)
 
@@ -15,16 +11,15 @@ class GeminiService:
         api_key = settings.GEMINI_API_KEY
         if not api_key or api_key == 'your-gemini-api-key-here' or api_key == 'ВАША_ЗАМЕНА_API_КЛЮЧ_ЗДЕСЬ':
             logger.warning("API ключ Gemini не настроен")
-            self.model = None
+            self.client = None
             return
         
         try:
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-2.5-flash')
+            self.client = genai.Client(api_key=api_key)
             logger.info("Gemini API успешно инициализирован")
         except Exception as e:
             logger.error(f"Ошибка инициализации Gemini API: {e}")
-            self.model = None
+            self.client = None
     
     def get_system_prompt(self, assistant_type, user_role='user'):
         """Получить системный промпт для конкретного типа ассистента"""
@@ -71,7 +66,7 @@ class GeminiService:
     
     def generate_response(self, user_message, assistant_type, conversation_history=None):
         """Генерация ответа от ИИ"""
-        if not self.model:
+        if not self.client:
             logger.warning("Gemini API недоступен, возвращаем демо-ответ")
             return self._get_demo_response(user_message, assistant_type)
             
@@ -91,9 +86,12 @@ class GeminiService:
             # Добавляем новое сообщение
             full_prompt += f"Пользователь: {user_message}\nАссистент:"
             
-            response = self.model.generate_content(full_prompt)
+            response = self.client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[{'parts': [{'text': full_prompt}]}]
+            )
             
-            if response and response.text:
+            if response and hasattr(response, 'text'):
                 return response.text.strip()
             else:
                 logger.warning("Пустой ответ от Gemini API")
@@ -277,15 +275,18 @@ class GeminiService:
 """
         
         try:
-            if not self.model:
+            if not self.client:
                 return self._get_demo_driver_matching_response(route_type, driver_requirements, dates)
             
             system_prompt = self.get_system_prompt(AIAssistantType.DRIVER_MATCHING)
             full_prompt = system_prompt + "\n\n" + prompt
             
-            response = self.model.generate_content(full_prompt)
+            response = self.client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[{'parts': [{'text': full_prompt}]}]
+            )
             
-            if response and response.text:
+            if response and hasattr(response, 'text'):
                 return response.text.strip()
             else:
                 return "Извините, не удалось получить рекомендации. Попробуйте переформулировать запрос."
