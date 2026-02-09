@@ -14,4 +14,7 @@ python manage.py migrate
 echo "👤 Creating superuser if none exists..."
 python manage.py create_superuser_if_none
 
+echo "📝 Creating test data..."
+python manage.py create_test_data
+
 echo "✅ Build completed successfully!"
