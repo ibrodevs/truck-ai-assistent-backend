@@ -1,46 +1,38 @@
-import google.generativeai as genai
+import google.genai as genai
+from google.genai import types
 from django.conf import settings
 from .models import AIAssistantType
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiService:
     def __init__(self):
         api_key = settings.GEMINI_API_KEY
         if not api_key or api_key == 'your-gemini-api-key-here' or api_key == 'ВАША_ЗАМЕНА_API_КЛЮЧ_ЗДЕСЬ':
-            print("Предупреждение: API ключ Gemini не настроен")
-            self.model = None
+            logger.warning("API ключ Gemini не настроен")
+            self.client = None
             return
         
         try:
-            genai.configure(api_key=api_key)
+            self.client = genai.Client(api_key=api_key)
+            logger.info("Gemini API успешно инициализирован")
             
-            # Попробуем получить список доступных моделей
+            # Проверим доступность API
             try:
-                models = genai.list_models()
-                available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
-                print(f"Доступные модели: {available_models}")
+                # Тестовый запрос
+                response = self.client.models.generate_content(
+                    model='gemini-1.5-flash',
+                    contents='Привет! Это тест.'
+                )
+                logger.info("Gemini API работает корректно")
+            except Exception as test_error:
+                logger.warning(f"Тест Gemini API не прошел: {test_error}")
                 
-                # Используем первую доступную модель
-                if available_models:
-                    model_name = available_models[0]
-                    self.model = genai.GenerativeModel(model_name)
-                    print(f"Gemini API успешно инициализирован с моделью: {model_name}")
-                else:
-                    print("Не найдено доступных моделей")
-                    self.model = None
-                    
-            except Exception as list_error:
-                print(f"Ошибка получения списка моделей: {list_error}")
-                # Fallback к попытке прямого создания модели
-                try:
-                    self.model = genai.GenerativeModel('gemini-pro')
-                    print("Fallback: используем gemini-pro")
-                except:
-                    self.model = None
-                    
         except Exception as e:
-            print(f"Ошибка инициализации Gemini API: {e}")
-            self.model = None
+            logger.error(f"Ошибка инициализации Gemini API: {e}")
+            self.client = None
     
     def get_system_prompt(self, assistant_type, user_role='user'):
         """Получить системный промпт для конкретного типа ассистента"""
@@ -87,35 +79,45 @@ class GeminiService:
     
     def generate_response(self, user_message, assistant_type, conversation_history=None):
         """Генерация ответа от ИИ"""
-        if not self.model:
-            # Демонстрационная заглушка для разных типов ассистентов
+        if not self.client:
+            logger.warning("Gemini API недоступен, возвращаем демо-ответ")
             return self._get_demo_response(user_message, assistant_type)
             
         try:
             system_prompt = self.get_system_prompt(assistant_type)
             
-            # Формируем полный промпт
-            full_prompt = system_prompt + "\n\n"
+            # Формируем сообщения для нового API
+            messages = [{'role': 'user', 'parts': [{'text': system_prompt}]}]
             
             # Добавляем историю диалога если есть
             if conversation_history and len(conversation_history) > 0:
-                # Берем последние 10 сообщений безопасно
                 recent_messages = list(conversation_history)[-10:] if len(conversation_history) >= 10 else list(conversation_history)
                 for msg in recent_messages:
-                    sender = "Пользователь" if msg.is_user_message else "Ассистент"
-                    full_prompt += f"{sender}: {msg.content}\n"
+                    role = 'user' if msg.is_user_message else 'model'
+                    messages.append({
+                        'role': role,
+                        'parts': [{'text': msg.content}]
+                    })
             
-            full_prompt += f"Пользователь: {user_message}\nАссистент:"
+            # Добавляем новое сообщение пользователя
+            messages.append({
+                'role': 'user',
+                'parts': [{'text': user_message}]
+            })
             
-            response = self.model.generate_content(full_prompt)
+            response = self.client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=messages
+            )
             
             if response and hasattr(response, 'text') and response.text:
                 return response.text
             else:
+                logger.warning("Пустой ответ от Gemini API")
                 return "Извините, не удалось получить ответ от ИИ. Попробуйте переформулировать вопрос."
             
         except Exception as e:
-            print(f"Ошибка Gemini API: {e}")
+            logger.error(f"Ошибка Gemini API: {e}")
             return self._get_demo_response(user_message, assistant_type)
     
     def _get_demo_response(self, user_message, assistant_type):
@@ -203,7 +205,7 @@ class GeminiService:
    • Доступен: {'Да' if driver.get('available', True) else 'Нет'}{calendar_info}
 """
             
-            if not self.model:
+            if not self.client:
                 return f"""📋 АНАЛИЗ ПОДБОРА ВОДИТЕЛЕЙ
 
 Тип маршрута: {route_type}
@@ -252,7 +254,7 @@ class GeminiService:
             
         else:
             # Если водителей нет в БД - возвращаем общие рекомендации
-            if not self.model:
+            if not self.client:
                 return f"""📋 АНАЛИЗ ТРЕБОВАНИЙ К ВОДИТЕЛЮ
 
 Тип маршрута: {route_type}
@@ -292,10 +294,16 @@ class GeminiService:
 """
         
         try:
+            if not self.client:
+                return self._get_demo_driver_matching_response(route_type, driver_requirements, dates)
+            
             system_prompt = self.get_system_prompt(AIAssistantType.DRIVER_MATCHING)
             full_prompt = system_prompt + "\n\n" + prompt
             
-            response = self.model.generate_content(full_prompt)
+            response = self.client.models.generate_content(
+                model='gemini-1.5-flash',
+                contents=[{'role': 'user', 'parts': [{'text': full_prompt}]}]
+            )
             
             if response and hasattr(response, 'text') and response.text:
                 return response.text
@@ -303,5 +311,32 @@ class GeminiService:
                 return "Извините, не удалось получить рекомендации. Попробуйте переформулировать запрос."
             
         except Exception as e:
-            print(f"Ошибка Gemini API в подборе водителей: {e}")
-            return f"Извините, произошла ошибка при обработке запроса: {str(e)}"
+            logger.error(f"Ошибка Gemini API в подборе водителей: {e}")
+            return self._get_demo_driver_matching_response(route_type, driver_requirements, dates)
+    
+    def _get_demo_driver_matching_response(self, route_type, driver_requirements, dates):
+        """Демо ответ для подбора водителей"""
+        return f"""🚛 РЕКОМЕНДАЦИИ ПО ПОДБОРУ ВОДИТЕЛЯ
+
+Маршрут: {route_type}
+Требования: {driver_requirements}
+Даты: {dates}
+
+📋 НЕОБХОДИМЫЕ ДОКУМЕНТЫ:
+• Водительские права категории C/CE
+• Карта водителя для тахографа
+• Медицинская справка (действующая)
+• Справка о несудимости
+
+💼 ОПЫТ И НАВЫКИ:
+• Стаж работы на грузовых автомобилях: от 3 лет
+• Опыт международных перевозок (если требуется)
+• Знание особенностей перевозки грузов
+
+🎯 КЛЮЧЕВЫЕ КАЧЕСТВА:
+• Пунктуальность и ответственность
+• Стрессоустойчивость
+• Коммуникабельность
+• Готовность к работе по графику
+
+⚠️ Это демо-версия. Для персонализированных рекомендаций настройте API ключ Gemini."""
