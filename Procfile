@@ -1,1 +1,1 @@
-web: gunicorn truck_platform.wsgi:application
+web: gunicorn -c gunicorn.conf.py truck_platform.wsgi:application

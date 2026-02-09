@@ -16,7 +16,7 @@ render.com → New + → Web Service
 Connect GitHub repo
 Name: truck-ai-backend
 Build: ./build.sh
-Start: gunicorn truck_platform.wsgi:application
+Start: gunicorn -c gunicorn.conf.py
 ```
 
 ### 3. Environment Variables
@@ -42,6 +42,16 @@ Render автоматически запустит деплой. Займет ~1
 ### 5. Проверка
 - Админка: `https://your-app.onrender.com/admin/`
 - API: `https://your-app.onrender.com/api/`
+
+## 🔧 Troubleshooting
+
+### ❌ "No module named 'app'" 
+Убедитесь, что:
+- Build Command: `./build.sh`
+- Start Command: `gunicorn -c gunicorn.conf.py`
+
+### ❌ Static files не загружаются
+Проверьте, что `collectstatic` выполнился в логах сборки.
 
 ---
 

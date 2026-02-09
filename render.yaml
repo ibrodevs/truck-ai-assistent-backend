@@ -3,7 +3,7 @@ services:
     name: truck-ai-backend
     env: python
     buildCommand: "./build.sh"
-    startCommand: "gunicorn truck_platform.wsgi:application"
+    startCommand: "gunicorn -c gunicorn.conf.py truck_platform.wsgi:application"
     plan: free
     healthCheckPath: /admin/
     envVars:
@@ -28,6 +28,7 @@ services:
       - key: DJANGO_SUPERUSER_EMAIL
         value: admin@truckai.com
       - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
         sync: false
 
 databases:
