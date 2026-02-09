@@ -26,9 +26,9 @@ def get_user_for_request(request):
         profile, _ = UserProfile.objects.get_or_create(
             user=test_user,
             defaults={
-                'role': 'trucker',
+                'role': 'dispatcher',  # Изменяем роль на диспетчер для тестирования
                 'phone': '+7900000000',
-                'bio': 'Тестовый пользователь'
+                'bio': 'Тестовый пользователь-диспетчер'
             }
         )
         return test_user
